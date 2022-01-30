@@ -2,6 +2,7 @@ package tritonhttp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -58,7 +59,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		req, bytesReceived, err := ReadRequest(br)
 
 		//Handle EOF
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			log.Printf("Connection closed by %v", conn.RemoteAddr())
 			_ = conn.Close()
 			return
@@ -66,12 +67,15 @@ func (s *Server) HandleConnection(conn net.Conn) {
 
 		// Handle timeout
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			fmt.Println("TIMED_OUT")
 			fmt.Println(bytesReceived)
 			if bytesReceived {
 				// Send 400 response
 				res := &Response{}
 				res.HandleBadRequest()
+				err := res.Write(conn)
+				if err != nil {
+					fmt.Println(err)
+				}
 				conn.Close()
 				return
 			}
@@ -84,6 +88,10 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			fmt.Println(err)
 			res := &Response{}
 			res.HandleBadRequest()
+			err := res.Write(conn)
+			if err != nil {
+				fmt.Println(err)
+			}
 			conn.Close()
 			return
 		}
@@ -91,7 +99,10 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		// Handle good request
 		if err == nil {
 			res := s.HandleGoodRequest(req)
-			res.Write(conn)
+			err := res.Write(conn)
+			if err != nil {
+				fmt.Println(err)
+			}
 			if res.StatusCode == 404 {
 				conn.Close()
 				return
@@ -99,13 +110,10 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		}
 
 		// Close conn if requested
-		val, ok := req.Header["Connection"]
-		if ok {
-			if val == "close" {
-				fmt.Println("closing connection (connection header)")
-				conn.Close()
-				return
-			}
+		if req.Close {
+			fmt.Println("closing connection (connection header)")
+			conn.Close()
+			return
 		}
 
 	}

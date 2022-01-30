@@ -3,6 +3,7 @@ package tritonhttp
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -35,12 +36,12 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 	bytesReceived = false
 	initial_line, err := ReadLine(br)
 	if err != nil {
-		return req, bytesReceived, err
+		return nil, bytesReceived, err
 	}
 
 	req.Method, req.URL, req.Proto, err = parseInitialLine(initial_line)
 	if err != nil {
-		return req, bytesReceived, fmt.Errorf("error reading")
+		return nil, bytesReceived, err
 	}
 	bytesReceived = true
 
@@ -49,7 +50,11 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 	for {
 		header_line, err := ReadLine(br)
 		if err != nil {
-			return req, bytesReceived, err
+			if err == io.EOF {
+				continue
+			} else {
+				return nil, bytesReceived, err
+			}
 		}
 		if header_line == "" {
 			break
@@ -66,7 +71,7 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 	// Check required headers
 	val, ok := req.Header["Host"]
 	if !ok {
-		return req, bytesReceived, fmt.Errorf("missing required header")
+		return nil, bytesReceived, fmt.Errorf("missing required header")
 	} else {
 		req.Host = val
 		delete(req.Header, "Host")
@@ -82,7 +87,7 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 		}
 		delete(req.Header, "Connection")
 	}
-
+	fmt.Printf("REQUEST %v", req)
 	return req, bytesReceived, nil
 }
 
