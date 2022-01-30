@@ -1,8 +1,25 @@
 package tritonhttp
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"os"
+	"sort"
 )
+
+const (
+	responseProto    = "HTTP/1.1"
+	statusOK         = 200
+	statusBadRequest = 400
+	statusNotFound   = 404
+)
+
+var statusText = map[int]string{
+	statusOK:         "OK",
+	statusBadRequest: "Bad Request",
+	statusNotFound:   "Not Found",
+}
 
 type Response struct {
 	StatusCode int    // e.g. 200
@@ -39,7 +56,18 @@ func (res *Response) Write(w io.Writer) error {
 // WriteStatusLine writes the status line of res to w, including the ending "\r\n".
 // For example, it could write "HTTP/1.1 200 OK\r\n".
 func (res *Response) WriteStatusLine(w io.Writer) error {
-	panic("todo")
+	bw := bufio.NewWriter(w)
+	status_line := fmt.Sprintf("%v %v %v\r\n", responseProto, res.StatusCode, statusText[res.StatusCode])
+	_, err := bw.WriteString(status_line)
+	if err != nil {
+		return err
+	}
+
+	err = bw.Flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // WriteSortedHeaders writes the headers of res to w, including the ending "\r\n".
@@ -47,11 +75,50 @@ func (res *Response) WriteStatusLine(w io.Writer) error {
 // For HTTP, there is no need to write headers in any particular order.
 // TritonHTTP requires to write in sorted order for the ease of testing.
 func (res *Response) WriteSortedHeaders(w io.Writer) error {
-	panic("todo")
+	keys := make([]string, 0, len(res.Header))
+	for k := range res.Header {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	bw := bufio.NewWriter(w)
+	headers := ""
+	for _, key := range keys {
+		headers += fmt.Sprintf("%v: %v\r\n", key, res.Header[key])
+	}
+	headers += "\r\n"
+	_, err := bw.WriteString(headers)
+	if err != nil {
+		return err
+	}
+
+	err = bw.Flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // WriteBody writes res' file content as the response body to w.
 // It doesn't write anything if there is no file to serve.
 func (res *Response) WriteBody(w io.Writer) error {
-	panic("todo")
+	if res.FilePath == "" {
+		return nil
+	} else {
+		bw := bufio.NewWriter(w)
+		body, err := os.ReadFile(res.FilePath)
+		if err != nil {
+			return err
+		}
+		_, err = bw.WriteString(string(body))
+		if err != nil {
+			return err
+		}
+
+		err = bw.Flush()
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
 }

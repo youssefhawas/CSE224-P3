@@ -2,6 +2,8 @@ package tritonhttp
 
 import (
 	"bufio"
+	"fmt"
+	"strings"
 )
 
 type Request struct {
@@ -29,13 +31,77 @@ type Request struct {
 // some bytes are received before the error occurs. This is useful to determine
 // the timeout with partial request received condition.
 func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error) {
-	panic("todo")
+	req = &Request{}
+	bytesReceived = false
+	initial_line, err := ReadLine(br)
+	if err != nil {
+		return req, bytesReceived, err
+	}
 
-	// Read start line
+	req.Method, req.URL, req.Proto, err = parseInitialLine(initial_line)
+	if err != nil {
+		return req, bytesReceived, fmt.Errorf("error reading")
+	}
+	bytesReceived = true
 
+	req.Header = make(map[string]string)
 	// Read headers
+	for {
+		header_line, err := ReadLine(br)
+		if err != nil {
+			return req, bytesReceived, err
+		}
+		if header_line == "" {
+			break
+		}
+		split_line := strings.SplitN(header_line, ":", 2)
+		key := CanonicalHeaderKey(split_line[0])
+		val := split_line[1]
+		if val[0] == ' ' {
+			val = strings.ReplaceAll(val, " ", "")
+		}
+		req.Header[key] = val
+	}
 
 	// Check required headers
+	val, ok := req.Header["Host"]
+	if !ok {
+		return req, bytesReceived, fmt.Errorf("missing required header")
+	} else {
+		req.Host = val
+		delete(req.Header, "Host")
+	}
 
 	// Handle special headers
+	val, ok = req.Header["Connection"]
+	if ok {
+		if val != "close" {
+			req.Close = false
+		} else {
+			req.Close = true
+		}
+		delete(req.Header, "Connection")
+	}
+
+	return req, bytesReceived, nil
+}
+
+func parseInitialLine(initial_line string) (string, string, string, error) {
+	split_line := strings.Split(initial_line, " ")
+	if len(split_line) != 3 {
+		return "", "", "", fmt.Errorf("could not parse the request line, got fields %v", split_line)
+	}
+	method := split_line[0]
+	url := split_line[1]
+	proto := split_line[2]
+
+	if method != "GET" {
+		return method, url, proto, fmt.Errorf("invalid method received, got method %v", method)
+	}
+
+	if proto != "HTTP/1.1" {
+		return method, url, proto, fmt.Errorf("invalid proto received, got proto %v", proto)
+	}
+
+	return method, url, proto, nil
 }

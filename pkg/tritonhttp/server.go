@@ -1,7 +1,16 @@
 package tritonhttp
 
 import (
+	"bufio"
+	"fmt"
+	"io"
+	"log"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Server struct {
@@ -17,55 +26,166 @@ type Server struct {
 // ListenAndServe listens on the TCP network address s.Addr and then
 // handles requests on incoming connections.
 func (s *Server) ListenAndServe() error {
-	panic("todo")
+	listener, err := net.Listen("tcp", s.Addr)
+	if err != nil {
+		log.Panic(err)
+	}
 
+	fmt.Println("Listening on ", listener.Addr().String())
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Panic(err)
+		}
+		go s.HandleConnection(conn)
+	}
 	// Hint: call HandleConnection
 }
 
 // HandleConnection reads requests from the accepted conn and handles them.
 func (s *Server) HandleConnection(conn net.Conn) {
-	panic("todo")
-
 	// Hint: use the other methods below
-
+	br := bufio.NewReader(conn)
 	for {
 		// Set timeout
+		err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if err != nil {
+			log.Printf("Failed to set timeout for connection %v", conn)
+			conn.Close()
+			return
+		}
+		req, bytesReceived, err := ReadRequest(br)
 
-		// Try to read next request
-
-		// Handle EOF
+		//Handle EOF
+		if err == io.EOF {
+			log.Printf("Connection closed by %v", conn.RemoteAddr())
+			_ = conn.Close()
+			return
+		}
 
 		// Handle timeout
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			fmt.Println("TIMED_OUT")
+			fmt.Println(bytesReceived)
+			if bytesReceived {
+				// Send 400 response
+				res := &Response{}
+				res.HandleBadRequest()
+				conn.Close()
+				return
+			}
+			_ = conn.Close()
+			return
+		}
 
 		// Handle bad request
+		if err != nil {
+			fmt.Println(err)
+			res := &Response{}
+			res.HandleBadRequest()
+			conn.Close()
+			return
+		}
 
 		// Handle good request
+		if err == nil {
+			res := s.HandleGoodRequest(req)
+			res.Write(conn)
+			if res.StatusCode == 404 {
+				conn.Close()
+				return
+			}
+		}
 
 		// Close conn if requested
+		val, ok := req.Header["Connection"]
+		if ok {
+			if val == "close" {
+				fmt.Println("closing connection (connection header)")
+				conn.Close()
+				return
+			}
+		}
+
 	}
 }
 
 // HandleGoodRequest handles the valid req and generates the corresponding res.
 func (s *Server) HandleGoodRequest(req *Request) (res *Response) {
-	panic("todo")
-
 	// Hint: use the other methods below
+	res = &Response{}
+	url := req.URL
+	full_path := filepath.Join(s.DocRoot, url)
+	cleaned_path := filepath.Clean(full_path)
+	if !strings.Contains(cleaned_path, s.DocRoot) {
+		res.HandleNotFound(req)
+		return res
+	}
+	dir, err := os.Stat(cleaned_path)
+	if err != nil {
+		fmt.Println(cleaned_path)
+		res.HandleNotFound(req)
+		return res
+	}
+	if dir.IsDir() {
+		cleaned_path = filepath.Join(cleaned_path, "index.html")
+	}
+	fmt.Println(cleaned_path)
+	_, err = os.Stat(cleaned_path)
+	if err != nil {
+		res.HandleNotFound(req)
+		return res
+	}
+	res.HandleOK(req, cleaned_path)
+	return res
 }
 
 // HandleOK prepares res to be a 200 OK response
 // ready to be written back to client.
 func (res *Response) HandleOK(req *Request, path string) {
-	panic("todo")
+	headers := make(map[string]string)
+	headers["Date"] = FormatTime(time.Now())
+	res.FilePath = path
+
+	fi, err := os.Stat(path)
+	if err != nil {
+		fmt.Println(err)
+	}
+	size := fi.Size()
+	headers["Last-Modified"] = FormatTime(fi.ModTime())
+	headers["Content-Length"] = strconv.Itoa(int(size))
+	headers["Content-Type"] = MIMETypeByExtension(filepath.Ext(path))
+	if req.Close {
+		headers["Connection"] = "close"
+	}
+	res.StatusCode = 200
+	res.Header = headers
+	res.Proto = "HTTP/1.1"
+	res.Request = req
 }
 
 // HandleBadRequest prepares res to be a 400 Bad Request response
 // ready to be written back to client.
 func (res *Response) HandleBadRequest() {
-	panic("todo")
+	headers := make(map[string]string)
+	headers["Date"] = FormatTime(time.Now())
+	headers["Connection"] = "close"
+	res.StatusCode = 400
+	res.Header = headers
+	res.Proto = "HTTP/1.1"
+	fmt.Println(res)
 }
 
 // HandleNotFound prepares res to be a 404 Not Found response
 // ready to be written back to client.
 func (res *Response) HandleNotFound(req *Request) {
-	panic("todo")
+	headers := make(map[string]string)
+	headers["Date"] = FormatTime(time.Now())
+	if req.Close {
+		headers["Connection"] = "close"
+	}
+	res.StatusCode = 404
+	res.Header = headers
+	res.Proto = "HTTP/1.1"
 }
