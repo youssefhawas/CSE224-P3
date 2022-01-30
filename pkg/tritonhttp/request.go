@@ -3,7 +3,6 @@ package tritonhttp
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"strings"
 )
 
@@ -50,11 +49,7 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 	for {
 		header_line, err := ReadLine(br)
 		if err != nil {
-			if err == io.EOF {
-				continue
-			} else {
-				return nil, bytesReceived, err
-			}
+			return nil, bytesReceived, err
 		}
 		if header_line == "" {
 			break
