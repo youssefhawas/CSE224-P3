@@ -87,7 +87,6 @@ func ReadRequest(br *bufio.Reader) (req *Request, bytesReceived bool, err error)
 		}
 		delete(req.Header, "Connection")
 	}
-	fmt.Printf("REQUEST %v", req)
 	return req, bytesReceived, nil
 }
 

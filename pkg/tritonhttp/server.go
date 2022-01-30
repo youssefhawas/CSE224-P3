@@ -67,7 +67,6 @@ func (s *Server) HandleConnection(conn net.Conn) {
 
 		// Handle timeout
 		if err, ok := err.(net.Error); ok && err.Timeout() {
-			fmt.Println(bytesReceived)
 			if bytesReceived {
 				// Send 400 response
 				res := &Response{}
@@ -111,7 +110,6 @@ func (s *Server) HandleConnection(conn net.Conn) {
 
 		// Close conn if requested
 		if req.Close {
-			fmt.Println("closing connection (connection header)")
 			conn.Close()
 			return
 		}
